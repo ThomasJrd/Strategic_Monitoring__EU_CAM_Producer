@@ -1,0 +1,1489 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+    <title>Analyse des Projets CAM NMC en Europe — Strategic Monitoring</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" crossorigin=""/>
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin=""></script>
+
+    <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.css" />
+    <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.Default.css" />
+    <script src="https://unpkg.com/leaflet.markercluster@1.5.3/dist/leaflet.markercluster.js"></script>
+
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+
+    <style>
+        body { font-family: 'Inter', sans-serif; }
+        .leaflet-container { height: 75vh; width: 100%; border-radius: 0.5rem; }
+        #project-modal { z-index: 1000; }
+        #actor-modal { z-index: 2000; }
+        .modal-backdrop { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background-color: rgba(0,0,0,0.6); display: flex; justify-content: center; align-items: center; }
+        .modal-content { max-height: 90vh; overflow-y: auto; }
+        .actor-link { cursor: pointer; text-decoration: underline; color: #2563eb; }
+        .modal-content::-webkit-scrollbar { width: 8px; }
+        .modal-content::-webkit-scrollbar-track { background: #f1f1f1; border-radius: 10px; }
+        .modal-content::-webkit-scrollbar-thumb { background: #888; border-radius: 10px; }
+        .modal-content::-webkit-scrollbar-thumb:hover { background: #555; }
+        
+        /* Styles pour le sélecteur de vue (Vision Projet / Vision Capacité) */
+        .map-mode-selector {
+            position: absolute;
+            top: 10px;
+            right: 10px;
+            z-index: 500;
+            background: white;
+            border-radius: 0.5rem;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+            overflow: hidden;
+            display: flex;
+        }
+        .map-mode-selector button {
+            padding: 0.5rem 1rem;
+            font-size: 0.875rem;
+            font-weight: 500;
+            border: none;
+            transition: background-color 0.2s;
+        }
+        .map-mode-selector button.active {
+            background-color: #3b82f6;
+            color: white;
+        }
+        .map-mode-selector button:not(.active):hover {
+            background-color: #f3f4f6;
+        }
+
+        /* Cluster circle style (used for custom divIcon) */
+        .cluster-circle {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: white;
+            font-weight: 600;
+            box-shadow: 0 0 6px rgba(0,0,0,0.25);
+            border: 2px solid rgba(255,255,255,0.4);
+            border-radius: 50%;
+        }
+
+        /* Confidence badge cursor pointer */
+        .confidence-badge { cursor: pointer; display:inline-block; }
+
+        /* Styles pour le centrage des colonnes (CONFIDENCE & CAPACITY) */
+        th.confidence-header, td.td-confidence-centered, 
+        th.capacity-header, td.td-capacity-centered { 
+            text-align: center;
+            vertical-align: middle;
+        }
+        /* Make th clickable look */
+        th.clickable { cursor: pointer; user-select: none; }
+
+        /* small helper for SVG icons container */
+        .individual-capacity-icon { display:block; }
+        
+        /* Styles pour la légende de la carte */
+        #capacity-legend {
+            position: absolute;
+            bottom: 30px; 
+            right: 10px;
+            z-index: 500;
+            background: rgba(255, 255, 255, 0.9);
+            padding: 10px;
+            border-radius: 5px;
+            box-shadow: 0 1px 5px rgba(0,0,0,0.4);
+            font-size: 0.8rem;
+            line-height: 1.4;
+        }
+        #capacity-legend h4 {
+            font-weight: 600;
+            margin-bottom: 5px;
+            color: #333;
+        }
+        .legend-item {
+            display: flex;
+            align-items: center;
+            margin-bottom: 3px;
+        }
+        .legend-color {
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+            margin-right: 8px;
+            border: 1px solid rgba(0,0,0,0.2);
+        }
+    </style>
+</head>
+<body class="bg-gray-50 text-gray-800">
+
+    <div class="container mx-auto p-4 sm:p-6 lg:p-8">
+        <header class="text-center mb-8 relative">
+            <h1 id="title" class="text-3xl sm:text-4xl font-bold text-slate-800">Projets de Production de CAM NMC en Europe</h1>
+            <p id="subtitle" class="text-slate-600 mt-2">Une vue d'ensemble des usines de matériaux actifs de cathode pour batteries.</p>
+
+            <select id="lang-select" class="absolute top-0 right-0 bg-blue-500 text-white text-sm px-3 py-1 rounded-md hover:bg-blue-600 transition">
+                <option value="fr">FR</option>
+                <option value="en">EN</option>
+                <option value="zh">中文</option>
+            </select>
+        </header>
+
+        <div class="mb-6 border-b border-gray-200">
+            <nav class="flex -mb-px" id="tabs">
+                <button data-view="table" class="tab-btn border-b-2 border-blue-500 text-blue-600 py-3 px-4 font-medium">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 mr-2 inline" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 10h18M3 14h18M3 6h18M3 18h18" /></svg>
+                    <span id="tab-table-label">Tableau des Projets</span>
+                </button>
+                <button data-view="map" class="tab-btn border-b-2 border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300 py-3 px-4 font-medium">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 mr-2 inline" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" /><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" /></svg>
+                    <span id="tab-map-label">Carte de l'Europe</span>
+                </button>
+            </nav>
+        </div>
+
+        <div id="filters" class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4 mb-6 p-4 bg-white rounded-lg shadow">
+            <input type="text" id="actor-filter" placeholder="Filtrer par acteur..." class="w-full p-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-transparent" />
+            <select id="country-filter" class="w-full p-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-transparent">
+                <option value="">Tous les pays</option>
+            </select>
+            <select id="status-filter" class="w-full p-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-transparent">
+                <option value="">Tous les statuts</option>
+            </select>
+            <select id="year-filter" class="w-full p-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-transparent">
+                <option value="">Toutes les années (SOP)</option>
+            </select>
+            <button id="reset-filters" class="w-full bg-slate-500 text-white p-2 rounded-md hover:bg-slate-600 transition"><span id="reset-label">Réinitialiser</span></button>
+        </div>
+
+        <div id="content">
+            <div id="table-view" class="bg-white rounded-lg shadow overflow-x-auto">
+                <table class="w-full text-sm text-left text-gray-500">
+                    <thead class="text-xs text-gray-700 uppercase bg-gray-100">
+                        <tr>
+                            <th scope="col" class="px-6 py-3"><span id="th-project">Projet</span></th>
+                            <th scope="col" class="px-6 py-3"><span id="th-country">Pays</span></th>
+                            <th scope="col" class="px-6 py-3"><span id="th-status">Statut</span></th>
+                            <th scope="col" class="px-6 py-3"><span id="th-sop">SOP</span></th>
+                            <th scope="col" class="px-6 py-3 clickable confidence-header"><span id="th-confidence">Niveau de Confiance</span></th>
+                            <th scope="col" class="px-6 py-3 capacity-header"><span id="th-capacity">Capacité Éstimée 2030 (ktpa)</span></th>
+                        </tr>
+                    </thead>
+                    <tbody id="projects-table-body"></tbody>
+                </table>
+                <p id="no-results" class="text-center p-8 text-gray-500 hidden">Aucun projet ne correspond à vos critères de recherche.</p>
+            </div>
+            <div id="map-view" class="hidden relative">
+                <div class="map-mode-selector">
+                    <button id="mode-project" data-mode="project" class="active"><span id="mode-project-label">Vision Projet</span></button>
+                    <button id="mode-capacity" data-mode="capacity"><span id="mode-capacity-label">Vision Capacité</span></button>
+                </div>
+                <div id="map" class="leaflet-container shadow-lg"></div>
+                <div id="capacity-legend" class="hidden">
+                    <h4 id="legend-title">Capacité Estimée (ktpa)</h4>
+                    <div class="space-y-1">
+                        <div class="legend-item"><span class="legend-color" style="background-color:#5b0d0d;"></span><span>2025</span></div>
+                        <div class="legend-item"><span class="legend-color" style="background-color:#D9534F;"></span><span>2030</span></div>
+                        <div class="legend-item"><span class="legend-color" style="background-color:#F0AD4E;"></span><span>2035</span></div>
+                    </div>
+                    <p id="legend-aggregation-text" class="text-xs mt-3 pt-2 border-t border-gray-300 text-gray-700"></p>
+                </div>
+            </div>
+        </div>
+
+    </div>
+
+    <div id="project-modal" class="modal-backdrop hidden">
+        <div class="modal-content bg-white rounded-lg shadow-2xl w-11/12 max-w-3xl m-4">
+            <div class="sticky top-0 bg-white p-4 sm:p-6 border-b border-gray-200 flex justify-between items-center rounded-t-lg">
+                <h2 id="project-modal-title" class="text-xl sm:text-2xl font-bold text-slate-800"></h2>
+                <button id="close-project-modal" class="text-gray-400 hover:text-gray-600 text-3xl font-light">&times;</button>
+            </div>
+            <div id="project-modal-body" class="p-4 sm:p-6 space-y-6">
+                </div>
+        </div>
+    </div>
+
+    <div id="actor-modal" class="modal-backdrop hidden">
+        <div class="modal-content bg-white rounded-lg shadow-2xl w-11/12 max-w-lg m-4">
+             <div class="sticky top-0 bg-white p-4 border-b border-gray-200 flex justify-between items-center rounded-t-lg">
+                <h3 id="actor-modal-title" class="text-lg font-bold text-slate-800"></h3>
+                <button id="close-actor-modal" class="text-gray-400 hover:hover:text-gray-600 text-3xl font-light">&times;</button>
+            </div>
+            <div id="actor-modal-body" class="p-4 space-y-4">
+                </div>
+        </div>
+    </div>
+
+    <div id="confidence-modal" class="modal-backdrop hidden">
+        <div class="modal-content bg-white rounded-lg shadow-2xl w-11/12 max-w-xl m-4">
+            <div class="sticky top-0 bg-white p-4 sm:p-6 border-b border-gray-200 flex justify-between items-center rounded-t-lg">
+                <h3 id="confidence-modal-title" class="text-lg font-bold text-slate-800">Méthodologie : Niveau de Confiance</h3>
+                <button id="close-confidence-modal" class="text-gray-400 hover:text-gray-600 text-2xl font-light">&times;</button>
+            </div>
+            <div id="confidence-modal-body" class="p-4 sm:p-6 text-sm text-gray-700 space-y-3">
+                </div>
+        </div>
+    </div>
+
+<script>
+    /* ------------------------------
+       Données des projets (Mise à jour avec confidenceLevel)
+       ------------------------------ */
+    const projectsData = [
+        {
+            id: 1,
+            projectName: "Usine CAM BASF",
+            actors: ["BASF"],
+            country: "Allemagne",
+            location: "Schwarzheide",
+            coordinates: [51.48, 13.88],
+            status: "Opérationnel",
+            camChemistry: "NMC (High-Performance)",
+            sop: 2022,
+            capacity: { 2024: 3, 2025: 5, 2030: 10, 2035: 10 },
+            description: "Projet majeur de BASF pour la production de matériaux actifs de cathode haute performance. Le site est en opération et en cours d'expansion pour répondre à la demande croissante du marché européen des véhicules électriques.",
+            latestUpdate: "Le projet est en phase d'expansion pour augmenter la capacité de production.",
+            confidenceLevel: "Opérationnel" // MIS A JOUR
+        },
+        {
+            id: 2,
+            projectName: "Usine CAM Umicore",
+            actors: ["Umicore"],
+            country: "Pologne",
+            location: "Nysa",
+            coordinates: [50.47, 17.33],
+            status: "Opérationnel",
+            camChemistry: "NMC (High-Nickel)",
+            sop: 2022,
+            capacity: { 2024: 33, 2025: 48, 2030: 163, 2035: 204 },
+            description: "Gigafactory de matériaux de cathode d'Umicore à Nysa. C'est l'une des premières usines de ce type en Europe et elle est essentielle pour la chaîne d'approvisionnement des batteries sur le continent.",
+            latestUpdate: "Umicore a revu à la baisse ses prévisions pour 2024 en raison d'un ralentissement de la demande de matériaux pour batteries. (Juin 2024)",
+            confidenceLevel: "Opérationnel" // MIS A JOUR
+        },
+        {
+            id: 3,
+            projectName: "EcoPro BM Gigafactory",
+            actors: ["EcoPro BM"],
+            country: "Hongrie",
+            location: "Debrecen",
+            coordinates: [47.53, 21.62],
+            status: "En construction",
+            camChemistry: "NMC (High-Nickel)",
+            sop: 2025,
+            capacity: { 2025: 0, 2030: 32, 2035: 32 },
+            description: "Premier site de production européen du leader sud-coréen EcoPro BM. Le projet vise à fournir des matériaux de cathode pour les grands constructeurs automobiles européens.",
+            latestUpdate: "La construction est en cours, avec un démarrage de la production prévu pour 2025.",
+            confidenceLevel: "Probable" // MIS A JOUR
+        },
+        {
+            id: 4,
+            projectName: "XTC New Energy / Orano",
+            actors: ["Orano", "XTC New Energy Materials"],
+            country: "France",
+            location: "Dunkerque",
+            coordinates: [51.03, 2.37],
+            status: "Planifié",
+            camChemistry: "NMC & pCAM",
+            sop: 2026,
+            capacity: { 2026: 0, 2027: 0, 2030: 24, 2035: 56 },
+            description: "Joint-venture entre le français Orano et le chinois XTC pour la production de pCAM et de CAM. Le projet vise à créer une chaîne de valeur intégrée et résiliente en France.",
+            latestUpdate: "Annonce de la création de deux joint-ventures en décembre 2024 pour la construction des usines.",
+            confidenceLevel: "Hautement Probable" // MIS A JOUR
+        },
+        {
+            id: 5,
+            projectName: "Huayou Cobalt CAM Plant",
+            actors: ["Huayou Cobalt"],
+            country: "Hongrie",
+            location: "Ács",
+            coordinates: [47.71, 18.01],
+            status: "En construction",
+            camChemistry: "NMC (High-Nickel)",
+            sop: 2026,
+            capacity: { 2026: 0, 2030: 43, 2035: 65 },
+            description: "Projet de Huayou Cobalt pour établir une capacité de production significative de matériaux de cathode en Hongrie, renforçant ainsi sa présence sur le marché européen.",
+            latestUpdate: "La construction a commencé et progresse comme prévu.",
+            confidenceLevel: "Hautement Probable" // MIS A JOUR
+        },
+        {
+            id: 6,
+            projectName: "Easpring / FMG",
+            actors: ["Easpring", "Finnish Minerals Group"],
+            country: "Finlande",
+            location: "Kotka",
+            coordinates: [60.46, 26.94],
+            status: "Planifié",
+            camChemistry: "NMC (High-Nickel probable)",
+            sop: 2027,
+            capacity: { 2027: 0, 2030: 54, 2035: 54 },
+            description: "Joint-venture entre le chinois Easpring et le groupe public finlandais FMG pour construire une usine de CAM. Le projet a reçu son permis environnemental.",
+            latestUpdate: "Le permis environnemental a été accordé en octobre 2024, la construction devrait débuter en 2025.",
+            confidenceLevel: "Hautement Probable" // MIS A JOUR
+        },
+        {
+            id: 7,
+            projectName: "Altilium Metals (ACT 4)",
+            actors: ["Altilium Metals"],
+            country: "Royaume-Uni",
+            location: "Teesside",
+            coordinates: [54.57, -1.23],
+            status: "Planifié",
+            camChemistry: "NMC (via recyclage)",
+            sop: 2027,
+            capacity: { 2027: 0, 2030: 18, 2035: 18 },
+            description: "Projet centré sur le recyclage des batteries pour produire des pCAM et CAM. Altilium vise à fermer la boucle de l'économie circulaire au Royaume-Uni.",
+            latestUpdate: "Partenariats stratégiques avec Enva et Connected Energy annoncés en juin 2024.",
+            confidenceLevel: "Probable" // MIS A JOUR
+        },
+        {
+            id: 8,
+            projectName: "LICAMAX (Axens / Changyuan Lico)",
+            actors: ["Axens", "Changyuan Lico"],
+            country: "France",
+            location: "Valenciennes / Saint-Saulve",
+            coordinates: [50.36, 3.56],
+            status: "Planifié",
+            camChemistry: "NMC (High-Nickel)",
+            sop: 2028,
+            capacity: { 2028: 0, 2030: 8, 2035: 11 },
+            description: "Joint-venture entre Axens et Hunan Changyuan Lico annoncée lors du sommet Choose France 2024 pour la production de CAM. Le pCAM serait importé de Chine.",
+            latestUpdate: "Le projet est en phase d'étude. (Mai 2024)",
+            confidenceLevel: "Possible" // MIS A JOUR
+        },
+        {
+            id: 9,
+            projectName: "Northvolt Ett Cathode",
+            actors: ["Northvolt"],
+            country: "Suède",
+            location: "Skellefteå",
+            coordinates: [64.75, 20.95],
+            status: "Stand By",
+            camChemistry: "NMC (Intégré)",
+            sop: 2024,
+            capacity: { 2024: 0, 2025: 0, 2030: 0, 2035: 0 },
+            description: "Production de CAM verticalement intégrée pour l'usage propre de Northvolt dans sa gigafactory de cellules de batteries. La capacité n'est pas destinée au marché libre.",
+            latestUpdate: "La production est actuellement en 'Stand By' suite à un ajustement des plans de montée en puissance. (Décembre 2024)",
+            confidenceLevel: "Probable" // MIS A JOUR (Acteur etabli, projet en stand-by mais existant)
+        },
+        {
+            id: 10,
+            projectName: "IONWAY (Umicore/PowerCo)",
+            actors: ["Umicore", "PowerCo"],
+            country: "Pologne",
+            location: "Nysa (Site PowerCo)",
+            coordinates: [50.55, 17.50],
+            status: "Planifié",
+            camChemistry: "NMC",
+            sop: 2026,
+            capacity: { 2026: 0, 2030: 45, 2035: 120 },
+            description: "Joint-venture stratégique entre Umicore et PowerCo (Volkswagen) pour sécuriser l'approvisionnement en CAM pour les futures usines de cellules de Volkswagen en Europe.",
+            latestUpdate: "Le projet est un élément clé de la stratégie de chaîne de valeur de Volkswagen.",
+            confidenceLevel: "Hautement Probable" // MIS A JOUR (Acteurs très établis, JV signée)
+        }
+    ];
+
+    /* ------------------------------
+       Données des acteurs (inchangées)
+       ------------------------------ */
+    const actorsData = {
+        "BASF": {
+            nationality: "Allemagne",
+            description: "Leader mondial de la chimie, BASF applique son expertise approfondie en chimie et en ingénierie des procédés pour produire des matériaux actifs de cathode (CAM) de haute performance.",
+            strategicPositioning: "Vise à être un fournisseur mondial de premier plan de matériaux de batterie durables et innovants, avec une forte empreinte de production locale en Europe pour servir les principaux constructeurs automobiles.",
+            website: "https://www.basf.com/"
+        },
+        "Umicore": {
+            nationality: "Belgique",
+            description: "Groupe mondial de technologie des matériaux et de recyclage, Umicore est un pionnier dans la production de matériaux de cathode pour batteries Li-ion et dans le recyclage de batteries en fin de vie.",
+            strategicPositioning: "Stratégie de 'boucle fermée' combinant la production de CAM à partir de sources primaires et recyclées. Partenariats solides avec les constructeurs automobiles européens pour sécuriser les volumes.",
+            website: "https://www.umicore.com/"
+        },
+        "EcoPro BM": {
+            nationality: "Corée du Sud",
+            description: "Leader mondial dans le développement et la production de matériaux de cathode à haute teneur en nickel (High-Nickel) pour les batteries de nouvelle génération.",
+            strategicPositioning: "S'implanter en Europe pour répondre directement à la demande croissante des constructeurs automobiles locaux et des fabricants de cellules, en apportant sa technologie de pointe.",
+            website: "https://www.ecoprobm.co.kr/eng"
+        },
+        "Orano": {
+            nationality: "France",
+            description: "Acteur majeur dans le domaine de l'énergie nucléaire, Orano met à profit son expertise dans la gestion et la transformation de matériaux complexes et stratégiques pour entrer dans le secteur des batteries.",
+            strategicPositioning: "Créer une chaîne de valeur souveraine et intégrée en France, de la préparation des matériaux (pCAM) à la production de CAM, en partenariat avec des experts technologiques comme XTC.",
+            website: "https://www.orano.group/en"
+        },
+        "XTC New Energy Materials": {
+            nationality: "Chine",
+            description: "Xiamen Tungsten (XTC) est un producteur chinois de premier plan de matériaux pour batteries, avec une forte expertise dans les matériaux de cathode.",
+            strategicPositioning: "S'associer à des acteurs locaux comme Orano pour pénétrer le marché européen et combiner son savoir-faire technologique avec la capacité industrielle et l'accès au marché de son partenaire.",
+            website: "https://www.xtc-softool.com/en"
+        },
+        "Huayou Cobalt": {
+            nationality: "Chine",
+            description: "Un des plus grands producteurs mondiaux de cobalt et un acteur majeur dans la production de précurseurs (pCAM) et de matériaux de cathode (CAM).",
+            strategicPositioning: "Expansion agressive en Europe pour construire une chaîne d'approvisionnement locale et servir directement ses clients fabricants de cellules et constructeurs automobiles implantés dans la région.",
+            website: "https://www.huayou.com/en"
+        },
+        "Easpring": {
+            nationality: "Chine",
+            description: "Beijing Easpring Material Technology est un fournisseur chinois spécialisé dans les matériaux de cathode pour batteries lithium-ion.",
+            strategicPositioning: "Pénétrer le marché européen via une joint-venture stratégique en Finlande, un pays riche en ressources minières et doté d'une forte ambition dans la chaîne de valeur des batteries.",
+            website: "https://www.easpring.com.cn/english/"
+        },
+        "Finnish Minerals Group": {
+            nationality: "Finlande",
+            description: "Société holding et de développement appartenant à l'État finlandais, dont la mission est de gérer les participations minières de l'État et de développer la chaîne de valeur des batteries en Finlande.",
+            strategicPositioning: "Agir en tant que partenaire local stratégique pour attirer des investissements étrangers et construire un écosystème de batteries durable et compétitif en Finlande.",
+            website: "https://www.mineralsgroup.fi/"
+        },
+        "Altilium Metals": {
+            nationality: "Royaume-Uni",
+            description: "Start-up spécialisée dans le recyclage de batteries, visant à développer une chaîne d'approvisionnement circulaire pour les matériaux de batterie au Royaume-Uni.",
+            strategicPositioning: "Se concentrer sur la technologie de recyclage hydrométallurgique pour récupérer les métaux critiques et produire des CAM de haute qualité à partir de déchets de batteries.",
+            website: "https://www.altiliummetals.com/"
+        },
+        "Axens": {
+            nationality: "France",
+            description: "Filiale du groupe IFPEN, Axens est un fournisseur international de technologies, d'équipements, de produits et de services pour la transformation du pétrole, du gaz, de la biomasse en carburants et produits chimiques.",
+            strategicPositioning: "Diversifier ses activités vers les matériaux pour batteries en s'appuyant sur son expertise en génie chimique et en s'associant avec un leader technologique chinois.",
+            website: "https://www.axens.net/"
+        },
+        "Changyuan Lico": {
+            nationality: "Chine",
+            description: "Hunan Changyuan Lico Co., Ltd. est un fabricant chinois spécialisé dans les matériaux pour batteries lithium-ion.",
+            strategicPositioning: "Accéder au marché européen via un partenariat JV avec un acteur industriel français établi.",
+            website: "https://www.changyuanlico.com/"
+        },
+        "Northvolt": {
+            nationality: "Suède",
+            description: "Fabricant européen de cellules de batteries, Northvolt vise à produire les batteries les plus vertes du monde avec une empreinte carbone minimale, grâce à une intégration verticale et à l'utilisation d'énergies renouvelables.",
+            strategicPositioning: "Intégration verticale complète, de la production de CAM à la fabrication de cellules et au recyclage, pour contrôler la qualité, les coûts et la durabilité de sa chaîne d'approvisionnement.",
+            website: "https://northvolt.com/"
+        },
+        "PowerCo": {
+            nationality: "Allemagne",
+            description: "Filiale du groupe Volkswagen dédiée aux activités de batteries, PowerCo est responsable de la stratégie mondiale du groupe en matière de batteries, y compris la R&D, la production de cellules et la sécurisation des matières premières.",
+            strategicPositioning: "Construire un réseau de gigafactories en Europe et en Amérique du Nord et sécuriser l'approvisionnement en matières premières via des partenariats stratégiques comme la JV IONWAY avec Umicore.",
+            website: "https://www.volkswagenag.com/en/Group/PowerCo.html"
+        }
+    };
+
+    /* ---------- Utilitaires ---------- */
+
+    function escapeHtml(unsafe) {
+        if (!unsafe) return '';
+        return unsafe
+             .replace(/&/g, "&amp;")
+             .replace(/</g, "&lt;")
+             .replace(/>/g, "&gt;")
+             .replace(/"/g, "&quot;")
+             .replace(/'/g, "&#039;");
+    }
+
+    function domainFromUrl(url) {
+        try {
+            const u = new URL(url);
+            return u.hostname.replace('www.','');
+        } catch (e) {
+            return null;
+        }
+    }
+
+    /* ---------- Traductions (mise à jour des niveaux de confiance et de la méthode) ---------- */
+    const translations = {
+        fr: {
+            title: "Projets de Production de CAM NMC en Europe",
+            subtitle: "Une vue d'ensemble des usines de matériaux actifs de cathode pour batteries.",
+            tabTable: "Tableau des Projets",
+            tabMap: "Carte de l'Europe",
+            filterActor: "Filtrer par acteur...",
+            allCountries: "Tous les pays",
+            allStatuses: "Tous les statuts",
+            allYears: "Toutes les années (SOP)",
+            reset: "Réinitialiser",
+            noResults: "Aucun projet ne correspond à vos critères de recherche.",
+            thProject: "Projet",
+            thCountry: "Pays",
+            thStatus: "Statut",
+            thSOP: "SOP",
+            thCapacity: "Capacité Éstimée 2030 (ktpa)",
+            thConfidence: "Niveau de Confiance",
+            modal_labels: {
+                actors: "Acteurs",
+                location: "Localisation",
+                status: "Statut",
+                sop: "Mise en service (SOP)",
+                chemistry: "Chimie CAM",
+                description: "Description",
+                latestUpdate: "Dernière mise à jour",
+                capacityEvolution: "Évolution de la capacité éstimée (ktpa)"
+            },
+            statuses: {
+                "Opérationnel": "Opérationnel",
+                "En construction": "En construction",
+                "Planifié": "Planifié",
+                "Stand By": "Stand By"
+            },
+            // MIS A JOUR DES NIVEAUX DE CONFIANCE
+            confidenceLevels: {
+                "Opérationnel": "Opérationnel",
+                "Hautement Probable": "Hautement Probable",
+                "Probable": "Probable",
+                "Possible": "Possible"
+            },
+            mapModes: {
+                project: "Vision Projet",
+                capacity: "Vision Capacité"
+            },
+            legendTitle: "Capacité Estimée (ktpa)",
+            legendAggregation: "Le chiffre au centre des regroupements (clusters) représente la somme totale des capacités estimées à l'horizon 2035 pour tous les projets agglomérés. (ktpa)", 
+            // NOUVELLE METHODOLOGIE DE CONFIANCE
+            confidence_modal: {
+                title: "Méthodologie : Niveau de Confiance",
+                intro: "L'indice de Confiance est une évaluation qualitative de la probabilité de réalisation du projet dans sa globalité, inspirée par la méthodologie de Benchmark Mineral Intelligence (BMI) et affinée par les insights d'Orano Strategic Monitoring. Il ne reflète pas seulement l'état d'avancement, mais l'engagement et la capacité des acteurs.",
+                table_title: "Niveaux de Probabilité (Analyse Orano)",
+                table: [
+                    { level: "Opérationnel", desc: "Le projet est en production. Le niveau de confiance porte sur la capacité à atteindre l'objectif de capacité annoncé." },
+                    { level: "Hautement Probable", desc: "Probabilité très élevée de réalisation. L'acteur est expérimenté, le financement est sécurisé (ou l'acteur est auto-financé), la construction est avancée ou les permis sont obtenus." },
+                    { level: "Probable", desc: "Probabilité forte de réalisation. L'acteur est établi, l'annonce est formelle (par exemple une JV signée ou le site est identifié), mais le projet est encore en phase d'ingénierie ou dépend de l'acquisition finale de permis/financement." },
+                    { level: "Possible", desc: "Probabilité modérée. L'acteur a annoncé son intention, les volumes sont à déterminer, le site est à identifier, mais le projet est à un stade très précoce (étude de faisabilité) et/ou dépend fortement de facteurs externes (aides publiques, marché)." }
+                ],
+                global_note_title: "Facteurs Clés pris en compte :",
+                global_note: [
+                    "Expérience de l'Acteur : Expertise éprouvée dans le domaine du CAM/Batterie et capacité financière (insight Orano).",
+                    "Phase du Projet : Correspondance entre le statut (Planifié, En Construction) et l'engagement financier/réglementaire.",
+                    "Transparence : Régularité et crédibilité des mises à jour publiques sur l'état d'avancement du projet."
+                ]
+            }
+        },
+        en: {
+            title: "CAM NMC Production Projects in Europe",
+            subtitle: "An overview of cathode active material plants for batteries.",
+            tabTable: "Project Table",
+            tabMap: "Europe Map",
+            filterActor: "Filter by actor...",
+            allCountries: "All countries",
+            allStatuses: "All statuses",
+            allYears: "All SOP years",
+            reset: "Reset",
+            noResults: "No projects match your search criteria.",
+            thProject: "Project",
+            thCountry: "Country",
+            thStatus: "Status",
+            thSOP: "SOP",
+            thCapacity: "Capacity 2030 (ktpa)",
+            thConfidence: "Confidence Level",
+            modal_labels: {
+                actors: "Actors",
+                location: "Location",
+                status: "Status",
+                sop: "Start of Production (SOP)",
+                chemistry: "CAM Chemistry",
+                description: "Description",
+                latestUpdate: "Latest update",
+                capacityEvolution: "Capacity evolution (ktpa)"
+            },
+            statuses: {
+                "Opérationnel": "Operational",
+                "En construction": "Under construction",
+                "Planifié": "Planned",
+                "Stand By": "Stand By"
+            },
+            // MIS A JOUR DES NIVEAUX DE CONFIANCE
+            confidenceLevels: {
+                "Opérationnel": "Operational",
+                "Hautement Probable": "Highly Probable",
+                "Probable": "Probable",
+                "Possible": "Possible"
+            },
+            mapModes: {
+                project: "Project View",
+                capacity: "Capacity View"
+            },
+            legendTitle: "Estimated Capacity (ktpa)",
+            legendAggregation: "The number at the center of the clusters represents the total sum of estimated capacities by **2035** for all aggregated projects. (ktpa)",
+            // NOUVELLE METHODOLOGIE DE CONFIANCE
+            confidence_modal: {
+                title: "Methodology: Confidence Level",
+                intro: "The Confidence Index is a qualitative assessment of the project's overall **probability of realization**, inspired by the **Benchmark Mineral Intelligence (BMI)** methodology and refined by Orano Strategic Monitoring insights. It reflects not only the progress status, but also the commitment and capability of the actors.",
+                table_title: "Probability Levels (Orano Analysis)",
+                table: [
+                    { level: "Operational", desc: "The project is in production. The confidence level relates to the ability to meet the announced capacity target." },
+                    { level: "Highly Probable", desc: "Very high probability of realization. The actor is experienced, funding is secured (or actor is self-funded), construction is advanced, or permits are obtained." },
+                    { level: "Probable", desc: "Strong probability of realization. The actor is established, the announcement is formal (signed JV), but the project is still in the engineering phase or depends on final permits/funding acquisition." },
+                    { level: "Possible", desc: "Moderate probability. The actor has announced its intention, the site is identified, but the project is at a very early stage (feasibility study) and/or heavily depends on external factors (public aid, market)." }
+                ],
+                global_note_title: "Key Factors Taken Into Account:",
+                global_note: [
+                    "**Actor Experience:** Proven expertise in the CAM/Battery field and financial capacity (Orano insight).",
+                    "**Project Phase:** Alignment between the status (Planned, Under Construction) and the financial/regulatory commitment.",
+                    "**Transparency:** Regularity and credibility of public updates on the project's progress."
+                ]
+            }
+        },
+        zh: {
+            title: "欧洲的NMC正极材料生产项目",
+            subtitle: "电池用正极活性材料工厂概览。",
+            tabTable: "项目表格",
+            tabMap: "欧洲地图",
+            filterActor: "按企业筛选...",
+            allCountries: "所有国家",
+            allStatuses: "所有状态",
+            allYears: "所有投产年份",
+            reset: "重置",
+            noResults: "没有符合条件的项目。",
+            thProject: "项目",
+            thCountry: "国家",
+            thStatus: "状态",
+            thSOP: "投产年 (SOP)",
+            thCapacity: "2030产能 (ktpa)",
+            thConfidence: "信心水平",
+            modal_labels: {
+                actors: "企业",
+                location: "位置",
+                status: "状态",
+                sop: "投产年 (SOP)",
+                chemistry: "CAM 化学",
+                description: "描述",
+                latestUpdate: "最新进展",
+                capacityEvolution: "产能演进 (ktpa)"
+            },
+            statuses: {
+                "Opérationnel": "运营中",
+                "En construction": "在建",
+                "Planifié": "规划中",
+                "Stand By": "待命"
+            },
+            // MIS A JOUR DES NIVEAUX DE CONFIANCE
+            confidenceLevels: {
+                "Opérationnel": "运营中",
+                "Hautement Probable": "极有可能",
+                "Probable": "很可能",
+                "Possible": "有可能"
+            },
+            mapModes: {
+                project: "项目视图",
+                capacity: "产能视图"
+            },
+            legendTitle: "预计产能 (ktpa)",
+            legendAggregation: "聚类中心数字代表所有聚类项目到**2035年**的预计总产能。 (ktpa)", 
+            // NOUVELLE METHODOLOGIE DE CONFIANCE
+            confidence_modal: {
+                title: "方法学：信心水平",
+                intro: "信心指数是对项目整体**实现概率**的定性评估，灵感来源于**Benchmark Mineral Intelligence (BMI)**方法论，并结合Orano战略监测的洞察力进行了完善。它不仅反映了项目进度，还反映了参与者的承诺和能力。",
+                table_title: "概率水平 (Orano 分析)",
+                table: [
+                    { level: "运营中", desc: "项目已投产。信心水平关注达到宣布产能目标的能力。" },
+                    { level: "极有可能", desc: "实现概率极高。参与者经验丰富，资金已落实（或可自筹资金），建设已进入后期或已取得所有许可。" },
+                    { level: "很可能", desc: "实现概率高。参与者是成熟企业，公告正式（已签署合资协议），但项目仍处于工程设计阶段或取决于最终许可/资金的落实。" },
+                    { level: "有可能", desc: "实现概率中等。参与者已宣布意向，场地已确定，但项目处于非常早期阶段（可行性研究），并且/或严重依赖外部因素（公共援助、市场）。" }
+                ],
+                global_note_title: "考虑的关键因素：",
+                global_note: [
+                    "**参与者经验：** 在CAM/电池领域的成熟专业知识和财务能力（Orano洞察）。",
+                    "**项目阶段：** 状态（规划、在建）与财务/监管承诺之间的一致性。",
+                    "**透明度：** 项目进展公开更新的规律性和可信度。"
+                ]
+            }
+        }
+    };
+
+    let currentLang = localStorage.getItem('lang') || 'fr';
+    document.getElementById('lang-select').value = currentLang;
+    let mapMode = 'project'; 
+    let map;
+    let markers = [];
+    let capacityCircles = [];
+    let capacityClusterGroup = null;
+    let currentCapacityChart = null;
+    let activeView = 'table';
+
+    function translateStatusLabel(status) {
+        const map = translations[currentLang].statuses;
+        return map[status] || status;
+    }
+
+    function translateConfidenceLabel(level) {
+        const map = translations[currentLang].confidenceLevels;
+        return map[level] || level;
+    }
+
+    function applyTranslations() {
+        const t = translations[currentLang];
+        document.getElementById('title').textContent = t.title;
+        document.getElementById('subtitle').textContent = t.subtitle;
+        document.getElementById('tab-table-label').textContent = t.tabTable;
+        document.getElementById('tab-map-label').textContent = t.tabMap;
+        document.getElementById('actor-filter').placeholder = t.filterActor;
+        
+        const countryDefault = document.querySelector('#country-filter option[value=""]');
+        if (countryDefault) countryDefault.textContent = t.allCountries;
+        const statusDefault = document.querySelector('#status-filter option[value=""]');
+        if (statusDefault) statusDefault.textContent = t.allStatuses;
+        const yearDefault = document.querySelector('#year-filter option[value=""]');
+        if (yearDefault) yearDefault.textContent = t.allYears;
+        
+        document.getElementById('reset-label').textContent = t.reset;
+        document.getElementById('no-results').textContent = t.noResults;
+        document.getElementById('th-project').textContent = t.thProject;
+        document.getElementById('th-country').textContent = t.thCountry;
+        document.getElementById('th-status').textContent = t.thStatus;
+        document.getElementById('th-sop').textContent = t.thSOP;
+        document.getElementById('th-capacity').textContent = t.thCapacity;
+        document.getElementById('th-confidence').textContent = t.thConfidence;
+
+        document.getElementById('mode-project-label').textContent = t.mapModes.project;
+        document.getElementById('mode-capacity-label').textContent = t.mapModes.capacity;
+
+        const legendTitleEl = document.getElementById('legend-title');
+        if (legendTitleEl) legendTitleEl.textContent = t.legendTitle;
+        
+        const legendAggTextEl = document.getElementById('legend-aggregation-text');
+        if (legendAggTextEl) legendAggTextEl.innerHTML = t.legendAggregation;
+
+        updateConfidenceModalContent();
+        applyFilters(); 
+    }
+
+    function initMap() {
+        if (map) return;
+        map = L.map('map').setView([51.505, 10.09], 5);
+        L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png', {
+            attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions">CARTO</a>',
+            subdomains: 'abcd',
+            maxZoom: 20
+        }).addTo(map);
+
+        capacityClusterGroup = L.markerClusterGroup({
+            maxClusterRadius: 60,
+            iconCreateFunction: function(cluster) {
+                const markers = cluster.getAllChildMarkers();
+                let sum2025 = 0, sum2030 = 0, sum2035 = 0;
+                markers.forEach(m => {
+                    const data = m.options._projectData || {};
+                    sum2025 += data.capacity2025 || 0;
+                    sum2030 += data.capacity2030 || 0;
+                    sum2035 += data.capacity2035 || 0;
+                });
+                return aggregatedConcentricIcon({2025: sum2025, 2030: sum2030, 2035: sum2035});
+            }
+        });
+        renderMapMarkers(projectsData);
+    }
+
+    /* ---------- Filtres ---------- */
+    const actorFilter = document.getElementById('actor-filter');
+    const countryFilter = document.getElementById('country-filter');
+    const statusFilter = document.getElementById('status-filter');
+    const yearFilter = document.getElementById('year-filter');
+    const resetFiltersBtn = document.getElementById('reset-filters');
+
+    function populateFilters() {
+        const countries = [...new Set(projectsData.map(p => p.country))].sort();
+        const statuses = [...new Set(projectsData.map(p => p.status))].sort();
+        const years = [...new Set(projectsData.map(p => p.sop))].sort((a,b) => a - b);
+
+        countries.forEach(country => {
+            const option = document.createElement('option');
+            option.value = country;
+            option.textContent = country;
+            countryFilter.appendChild(option);
+        });
+        statuses.forEach(status => {
+            const option = document.createElement('option');
+            option.value = status;
+            option.textContent = translateStatusLabel(status); 
+            statusFilter.appendChild(option);
+        });
+        years.forEach(year => {
+            const option = document.createElement('option');
+            option.value = year;
+            option.textContent = year;
+            yearFilter.appendChild(option);
+        });
+    }
+
+    /* ---------- Rendu Tableau ---------- */
+    const tableBody = document.getElementById('projects-table-body');
+    const noResults = document.getElementById('no-results');
+
+    function getStatusColor(status) {
+        switch (status) {
+            case 'Opérationnel': return 'bg-green-100 text-green-800';
+            case 'En construction': return 'bg-yellow-100 text-yellow-800';
+            case 'Planifié': return 'bg-blue-100 text-blue-800';
+            case 'Stand By': return 'bg-red-100 text-red-800';
+            default: return 'bg-gray-400 text-white';
+        }
+    }
+    
+    function getConfidenceColor(level) {
+        switch (level) {
+            case 'Opérationnel': return 'bg-green-700 text-white'; // Opérationnel (couleur forte)
+            case 'Hautement Probable': return 'bg-green-100 text-green-800';
+            case 'Probable': return 'bg-yellow-100 text-yellow-800';
+            case 'Possible': return 'bg-orange-100 text-orange-800';
+            default: return 'bg-gray-100 text-gray-800';
+        }
+    }
+
+
+    function renderTable(data) {
+        tableBody.innerHTML = '';
+        if (data.length === 0) {
+            noResults.classList.remove('hidden');
+            return;
+        }
+        noResults.classList.add('hidden');
+        data.forEach(project => {
+            const row = document.createElement('tr');
+            row.className = 'bg-white border-b hover:bg-gray-50 cursor-pointer';
+            
+            const confidenceBadgeId = `conf-badge-${project.id}`;
+            const confidenceHtml = `<div style="display:flex;justify-content:center;"><span id="${confidenceBadgeId}" class="px-2 py-1 text-xs font-medium rounded-full ${getConfidenceColor(project.confidenceLevel)} confidence-badge">${escapeHtml(translateConfidenceLabel(project.confidenceLevel))}</span></div>`;
+            
+            const capacity2030 = project.capacity[2030] || project.capacity['2030'] || project.capacity[2030] === 0 ? project.capacity[2030] : (project.capacity['2030'] || 'N/A');
+            row.innerHTML = `
+                <td class="px-6 py-4 font-medium text-gray-900 whitespace-nowrap">
+                    ${escapeHtml(project.projectName)}
+                    <div class="text-xs text-gray-500">${project.actors.join(', ')}</div>
+                </td>
+                <td class="px-6 py-4">${project.country}</td>
+                <td class="px-6 py-4">
+                    <span class="px-2 py-1 text-xs font-medium rounded-full ${getStatusColor(project.status)}">
+                        ${escapeHtml(translateStatusLabel(project.status))}
+                    </span>
+                </td>
+                <td class="px-6 py-4">${project.sop}</td>
+                <td class="px-6 py-4 td-confidence-centered">${confidenceHtml}</td>
+                <td class="px-6 py-4 td-capacity-centered">${escapeHtml(capacity2030.toString())}</td>
+            `;
+            
+            row.addEventListener('click', () => showProjectModal(project.id));
+            tableBody.appendChild(row);
+
+            const badgeEl = document.getElementById(confidenceBadgeId);
+            if (badgeEl) {
+                badgeEl.addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    document.getElementById('confidence-modal').classList.remove('hidden');
+                });
+            }
+        });
+    }
+
+    /* ---------- Vision par Capacité : constantes & couleurs ---------- */
+
+    const RADIUS_SCALE_FACTOR = 4.0; 
+    const MIN_RADIUS = 6; 
+
+    const CAPACITY_COLORS = {
+        2025: { color: '#5b0d0d', fillColor: '#5b0d0d', opacity: 0.85, fillOpacity: 0.45 }, 
+        2030: { color: '#D9534F', fillColor: '#D9534F', opacity: 0.7, fillOpacity: 0.30 }, 
+        2035: { color: '#F0AD4E', fillColor: '#F0AD4E', opacity: 0.5, fillOpacity: 0.18 }  
+    };
+
+    
+    function prepareConcentricLayers(capObj) {
+        const years = [2025,2030,2035];
+        const pairs = years.map(y => ({ year: y, cap: (capObj[y] || 0) }));
+        const capToEarliest = {};
+        for (const p of pairs) {
+            const c = p.cap || 0;
+            if (typeof capToEarliest[c] === 'undefined') capToEarliest[c] = p.year;
+            else capToEarliest[c] = Math.min(capToEarliest[c], p.year);
+        }
+        const unique = Object.keys(capToEarliest).map(k => parseFloat(k)).filter(v => !isNaN(v) && v >= 0);
+        unique.sort((a,b) => a - b);
+
+        const layers = unique.map(capVal => {
+            const year = capToEarliest[capVal];
+            const colorEntry = CAPACITY_COLORS[year] || CAPACITY_COLORS[2030];
+            return {
+                year: year,
+                cap: capVal,
+                color: colorEntry.color,
+                fillColor: colorEntry.fillColor,
+                strokeOpacity: colorEntry.opacity,
+                fillOpacity: colorEntry.fillOpacity
+            };
+        });
+        return layers;
+    }
+
+    function concentricSvgIcon(layers) {
+        if (!layers || layers.length === 0) {
+            const size = 12;
+            const svg = `<svg width="${size}" height="${size}" xmlns="http://www.w3.org/2000/svg"><circle cx="${size/2}" cy="${size/2}" r="${size/2-1}" fill="#ccc" /></svg>`;
+            return { html: svg, size: [size, size], anchor: [size/2, size/2] };
+        }
+
+        const radii = layers.map(l => Math.max(MIN_RADIUS, Math.min(120, Math.sqrt(l.cap) * RADIUS_SCALE_FACTOR)));
+        const outerRadius = radii[radii.length - 1];
+        const padding = 4;
+        const svgSize = Math.round(outerRadius * 2 + padding * 2);
+        const cx = svgSize / 2;
+        const cy = svgSize / 2;
+
+        let circlesSvg = '';
+        for (let i = radii.length - 1; i >= 0; i--) {
+            const r = radii[i];
+            const layer = layers[i];
+            circlesSvg += `<circle cx="${cx}" cy="${cy}" r="${r}" fill="${layer.fillColor}" fill-opacity="${layer.fillOpacity}" stroke="${layer.color}" stroke-opacity="${layer.strokeOpacity}" stroke-width="1.2" />`;
+        }
+
+        const svg = `<svg width="${svgSize}" height="${svgSize}" viewBox="0 0 ${svgSize} ${svgSize}" xmlns="http://www.w3.org/2000/svg">${circlesSvg}</svg>`;
+        return { html: svg, size: [svgSize, svgSize], anchor: [svgSize/2, svgSize/2] };
+    }
+
+    function aggregatedConcentricIcon(aggregatedCaps) {
+        const layers = prepareConcentricLayers(aggregatedCaps);
+        const result = concentricSvgIcon(layers);
+        
+        // Utilise la somme 2035 pour le label central
+        const sum2035 = Math.round((aggregatedCaps[2035] || 0)); 
+        
+        const size = result.size[0];
+        const fontSize = Math.max(10, Math.round(size / 6));
+        const html = `<div style="position:relative; width:${size}px; height:${size}px; display:inline-block;">
+                        ${result.html}
+                        <div style="position:absolute; left:0; top:0; width:${size}px; height:${size}px; display:flex;align-items:center;justify-content:center;pointer-events:none;">
+                           <div style="font-weight:700; color:#fff; text-shadow:0 1px 2px rgba(0,0,0,0.6); font-size:${fontSize}px;">${escapeHtml(sum2035.toString())}</div>
+                        </div>
+                      </div>`;
+        return L.divIcon({ html: html, className: '', iconSize: [size, size], iconAnchor: [size/2, size/2] });
+    }
+
+    function createCapacityClusterMarker(project) {
+        const coords = project.coordinates;
+        if (!coords || coords.length !== 2) return null;
+
+        const capObj = { 2025: project.capacity[2025] || 0, 2030: project.capacity[2030] || 0, 2035: project.capacity[2035] || 0 };
+
+        const layers = prepareConcentricLayers(capObj);
+
+        const svgIconData = concentricSvgIcon(layers);
+        const icon = L.divIcon({
+            html: svgIconData.html,
+            className: 'individual-capacity-icon',
+            iconSize: svgIconData.size,
+            iconAnchor: svgIconData.anchor
+        });
+
+        const marker = L.marker(coords, {
+            icon: icon,
+            interactive: true,
+            riseOnHover: true,
+            opacity: 1,
+            _projectData: {
+                id: project.id,
+                capacity2025: capObj[2025],
+                capacity2030: capObj[2030],
+                capacity2035: capObj[2035],
+                projectName: project.projectName
+            }
+        });
+
+        const capacityLines = [];
+        [2025,2030,2035].forEach(y => {
+            const v = capObj[y];
+            if (typeof v !== 'undefined' && v !== null) capacityLines.push(`<strong>${y}:</strong> ${v} ktpa`);
+        });
+        const popupHtml = `<b>${escapeHtml(project.projectName)}</b><br>${escapeHtml(project.location || '')}, ${escapeHtml(project.country || '')}<br>${capacityLines.join('<br>')}`;
+        marker.bindPopup(popupHtml);
+        marker.on('click', () => showProjectModal(project.id));
+        return marker;
+    }
+
+    function renderMapMarkers(data) {
+        if (!map) return;
+
+        markers.forEach(m => {
+            try { if (map.hasLayer(m)) map.removeLayer(m); } catch(e) {}
+        });
+        markers = [];
+
+        if (capacityClusterGroup) {
+            try {
+                capacityClusterGroup.clearLayers();
+                if (map.hasLayer(capacityClusterGroup)) map.removeLayer(capacityClusterGroup);
+            } catch(e) {}
+        }
+
+        if (mapMode === 'project') {
+            data.forEach(project => {
+                if (project.coordinates && project.coordinates.length === 2) {
+                    const marker = L.marker(project.coordinates).addTo(map)
+                        .bindPopup(`<b>${escapeHtml(project.projectName)}</b><br>${escapeHtml(project.location || '')}, ${escapeHtml(project.country || '')}`);
+                    marker.on('click', () => showProjectModal(project.id));
+                    markers.push(marker);
+                }
+            });
+        } else if (mapMode === 'capacity') {
+            if (!capacityClusterGroup) {
+                capacityClusterGroup = L.markerClusterGroup({
+                    maxClusterRadius: 60,
+                    iconCreateFunction: function(cluster) {
+                        const markers = cluster.getAllChildMarkers();
+                        let sum2025 = 0, sum2030 = 0, sum2035 = 0;
+                        markers.forEach(m => {
+                            const data = m.options._projectData || {};
+                            sum2025 += data.capacity2025 || 0;
+                            sum2030 += data.capacity2030 || 0;
+                            sum2035 += data.capacity2035 || 0;
+                        });
+                        return aggregatedConcentricIcon({2025: sum2025, 2030: sum2030, 2035: sum2035});
+                    }
+                });
+            }
+
+            data.forEach(project => {
+                const m = createCapacityClusterMarker(project);
+                if (m) capacityClusterGroup.addLayer(m);
+            });
+
+            map.addLayer(capacityClusterGroup);
+        }
+    }
+
+    /* ---------- Filtrage ---------- */
+    function applyFilters() {
+        const actorVal = actorFilter.value.toLowerCase();
+        const countryVal = countryFilter.value;
+        const statusVal = statusFilter.value;
+        const yearVal = yearFilter.value;
+
+        const filteredData = projectsData.filter(p => {
+            const actorMatch = p.actors.some(a => a.toLowerCase().includes(actorVal));
+            const countryMatch = !countryVal || p.country === countryVal;
+            const statusMatch = !statusVal || p.status === statusVal;
+            const yearMatch = !yearVal || p.sop.toString() === yearVal;
+            return actorMatch && countryMatch && statusMatch && yearMatch;
+        });
+
+        renderTable(filteredData);
+        if (activeView === 'map') {
+            renderMapMarkers(filteredData); 
+        }
+    }
+
+    function resetFilters() {
+        actorFilter.value = '';
+        countryFilter.value = '';
+        statusFilter.value = '';
+        yearFilter.value = '';
+        applyFilters();
+    }
+    
+    /* ---------- Fonctions Modales et Graphique ---------- */
+    
+    const projectModal = document.getElementById('project-modal');
+    const closeProjectModalBtn = document.getElementById('close-project-modal');
+    const projectModalTitle = document.getElementById('project-modal-title');
+    const projectModalBody = document.getElementById('project-modal-body');
+
+    const actorModal = document.getElementById('actor-modal');
+    const closeActorModalBtn = document.getElementById('close-actor-modal');
+    const actorModalTitle = document.getElementById('actor-modal-title');
+    const actorModalBody = document.getElementById('actor-modal-body');
+
+    const confidenceModal = document.getElementById('confidence-modal');
+    const closeConfidenceModalBtn = document.getElementById('close-confidence-modal');
+    const confidenceModalBody = document.getElementById('confidence-modal-body');
+    const confidenceModalTitle = document.getElementById('confidence-modal-title');
+
+    function renderCapacityChart(capacityData) {
+        const existingCanvas = document.getElementById('capacity-chart');
+        if (existingCanvas && currentCapacityChart) {
+            currentCapacityChart.destroy();
+            currentCapacityChart = null;
+        }
+        const chartElement = document.getElementById('capacity-chart');
+        if (!chartElement) return;
+
+        const ctx = chartElement.getContext('2d');
+        const labels = Object.keys(capacityData).sort((a, b) => parseInt(a) - parseInt(b));
+        const data = labels.map(year => capacityData[year]);
+
+        if(data.every(val => val === 0) || data.length === 0) {
+            chartElement.parentElement.classList.add('hidden');
+            return;
+        } else {
+            chartElement.parentElement.classList.remove('hidden');
+        }
+
+        currentCapacityChart = new Chart(ctx, {
+            type: 'line',
+            data: {
+                labels: labels,
+                datasets: [{
+                    label: 'Capacité Éstimée (ktpa)',
+                    data: data,
+                    borderColor: '#3b82f6',
+                    backgroundColor: 'rgba(59, 130, 246, 0.1)',
+                    fill: true,
+                    tension: 0.1
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                scales: {
+                    y: {
+                        beginAtZero: true,
+                        title: { display: true, text: 'Capacité Éstimée (ktpa)' }
+                    }
+                }
+            }
+        });
+    }
+
+    function hideProjectModal() {
+        projectModal.classList.add('hidden');
+        if(currentCapacityChart) {
+            currentCapacityChart.destroy();
+            currentCapacityChart = null;
+        }
+    }
+    
+    function hideActorModal() {
+        actorModal.classList.add('hidden');
+    }
+
+    async function fetchRssNews(query, maxItems = 3) {
+        const googleRss = `https://news.google.com/rss/search?q=${encodeURIComponent(query)}`;
+        try {
+            const res = await fetch(googleRss);
+            if (!res.ok) throw new Error('RSS fetch failed: ' + res.status);
+            const text = await res.text();
+            const parser = new DOMParser();
+            const xml = parser.parseFromString(text, "application/xml");
+            const items = Array.from(xml.querySelectorAll('item')).slice(0, maxItems).map(it => {
+                return {
+                    title: it.querySelector('title')?.textContent || '',
+                    link: it.querySelector('link')?.textContent || (it.querySelector('guid')?.textContent || ''),
+                    pubDate: it.querySelector('pubDate')?.textContent || '',
+                    source: it.querySelector('source')?.textContent || ( (it.querySelector('link')?.textContent) ? (() => { try { return (new URL(it.querySelector('link').textContent)).hostname } catch(e){ return ''; } })() : '' )
+                };
+            });
+            return items;
+        } catch (err) {
+            console.warn('fetchRssNews: google rss failed', err);
+            try {
+                const rssUrl = encodeURIComponent(googleRss);
+                const proxy = `https://api.rss2json.com/v1/api.json?rss_url=${rssUrl}`;
+                const res2 = await fetch(proxy);
+                if (!res2.ok) throw new Error('proxy fetch failed ' + res2.status);
+                const json = await res2.json();
+                return (json.items || []).slice(0, maxItems).map(it => ({
+                    title: it.title,
+                    link: it.link,
+                    pubDate: it.pubDate,
+                    source: it.source || domainFromUrl(it.link) || ''
+                }));
+            } catch (err2) {
+                console.warn('fetchRssNews: fallback failed', err2);
+                return [];
+            }
+        }
+    }
+
+    async function displayNewsContainer(query, containerEl, officialWebsite = null) {
+        if (!containerEl) return;
+        containerEl.innerHTML = `<p class="text-sm text-gray-500 italic">Chargement des dernières news...</p>`;
+        const items = await fetchRssNews(query, 6);
+        if (!items || items.length === 0) {
+            containerEl.innerHTML = `<p class="text-sm text-gray-500">Aucune news détectée automatiquement. <a class="underline" target="_blank" href="https://news.google.com/search?q=${encodeURIComponent(query)}">Voir la recherche Google News</a>.</p>`;
+            return;
+        }
+
+        const officialDomain = officialWebsite ? domainFromUrl(officialWebsite) : null;
+
+        const list = document.createElement('div');
+        list.className = 'space-y-3 text-sm';
+        items.forEach(it => {
+            const itemDomain = domainFromUrl(it.link) || (it.source || '');
+            const isOfficial = officialDomain && itemDomain && itemDomain.includes(officialDomain);
+            const d = new Date(it.pubDate);
+            const dateStr = isNaN(d) ? (it.pubDate || '') : d.toLocaleString(currentLang);
+
+            const row = document.createElement('div');
+            row.className = 'p-2 bg-slate-50 rounded-md';
+            row.innerHTML = `
+                <a class="font-medium underline" target="_blank" rel="noopener noreferrer" href="${it.link}">${escapeHtml(it.title)}</a>
+                <div class="text-xs text-gray-500 mt-1">${escapeHtml(it.source || itemDomain)} • ${escapeHtml(dateStr)} ${isOfficial ? '<span class="ml-2 px-2 py-0.5 rounded-full text-xs bg-green-100 text-green-800">Source officielle</span>' : ''}</div>
+            `;
+            list.appendChild(row);
+        });
+
+        containerEl.innerHTML = '';
+        containerEl.appendChild(list);
+    }
+
+    function showProjectModal(id) {
+        const project = projectsData.find(p => p.id === id);
+        if (!project) return;
+
+        projectModalTitle.textContent = project.projectName;
+        const actorsHtml = project.actors.map(actor => `<span class="actor-link" data-actor="${actor}" onclick="event.stopPropagation(); window.showActorModal('${actor}')">${actor}</span>`).join(', ');
+
+        const t = translations[currentLang].modal_labels;
+        const statusLabel = escapeHtml(translateStatusLabel(project.status));
+        const confidenceLabel = escapeHtml(translateConfidenceLabel(project.confidenceLevel));
+
+        projectModalBody.innerHTML = `
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-4 text-sm">
+                <div class="bg-slate-50 p-3 rounded-lg md:col-span-2"><strong>${t.actors}:</strong> ${actorsHtml}</div>
+                <div class="bg-slate-50 p-3 rounded-lg"><strong>${t.location}:</strong> ${project.location}, ${project.country}</div>
+                <div class="bg-slate-50 p-3 rounded-lg"><strong>${t.status}:</strong> <span class="px-2 py-1 text-xs font-medium rounded-full ${getStatusColor(project.status)}">${statusLabel}</span></div>
+                <div class="bg-slate-50 p-3 rounded-lg"><strong>${t.sop}:</strong> ${project.sop}</div>
+                <div class="bg-slate-50 p-3 rounded-lg"><strong>${translations[currentLang].thConfidence}:</strong> <div style="display:flex;justify-content:center;margin-top:6px;"><span class="px-2 py-1 text-xs font-medium rounded-full ${getConfidenceColor(project.confidenceLevel)}">${confidenceLabel}</span></div></div>
+                <div class="bg-slate-50 p-3 rounded-lg md:col-span-3"><strong>${t.chemistry}:</strong> ${project.camChemistry}</div>
+            </div>
+            <div>
+                <h4 class="font-semibold text-slate-700 mb-2">${t.description}</h4>
+                <p class="text-gray-600">${project.description}</p>
+            </div>
+            <div>
+                <h4 class="font-semibold text-slate-700 mb-2">${t.latestUpdate}</h4>
+                <p class="text-gray-600">${project.latestUpdate}</p>
+            </div>
+            <div>
+                <h4 class="font-semibold text-slate-700 mb-2">${t.capacityEvolution}</h4>
+                <div class="w-full h-64"><canvas id="capacity-chart"></canvas></div>
+            </div>
+
+            <div>
+                <h4 class="font-semibold text-slate-700 mb-2">Dernières news (projet)</h4>
+                <div id="project-news-container" class="text-sm"></div>
+            </div>
+
+            <div>
+                <h4 class="font-semibold text-slate-700 mb-2">Dernières news (acteurs associés)</h4>
+                <div id="project-actors-news" class="space-y-3 text-sm">
+                    ${project.actors.map((a, idx) => `<div class="p-2 bg-white rounded-md border" id="actor-news-${id}-${idx}">
+                        <h5 class="font-medium">${a}</h5>
+                        <div class="actor-news-content-${id}-${idx}"><div class="text-xs text-gray-500 italic">Chargement...</div></div>
+                    </div>`).join('')}
+                </div>
+            </div>
+        `;
+
+        projectModal.classList.remove('hidden');
+
+        setTimeout(() => renderCapacityChart(project.capacity), 50);
+
+        const projNewsEl = document.getElementById('project-news-container');
+        displayNewsContainer(project.projectName, projNewsEl, null);
+
+        project.actors.forEach((actor, idx) => {
+            const el = document.querySelector(`.actor-news-content-${id}-${idx}`);
+            const actorInfo = actorsData[actor];
+            const website = actorInfo ? actorInfo.website : null;
+            displayNewsContainer(actor, el, website);
+        });
+    }
+
+    window.showActorModal = function(actorName) {
+        const actor = actorsData[actorName];
+        if (!actor) return;
+
+        actorModalTitle.textContent = actorName;
+        const t = translations[currentLang].modal_labels;
+        const websiteHtml = actor.website ? `<div class="text-sm"><strong>Site officiel :</strong> <a target="_blank" class="underline" href="${actor.website}">${actor.website}</a></div>` : '';
+
+        actorModalBody.innerHTML = `
+            <p><strong>Nationalité :</strong> ${actor.nationality || ''}</p>
+            ${websiteHtml}
+            <div>
+                <h4 class="font-semibold text-slate-700 mt-2">${t.description}</h4>
+                <p class="text-gray-600">${actor.description}</p>
+            </div>
+            <div>
+                <h4 class="font-semibold text-slate-700 mt-2">Positionnement Stratégique</h4>
+                <p class="text-gray-600">${actor.strategicPositioning}</p>
+            </div>
+
+            <div>
+                <h4 class="font-semibold text-slate-700 mt-2">Dernières news (${actorName})</h4>
+                <div id="actor-news-container" class="text-sm"><div class="text-xs text-gray-500 italic">Chargement...</div></div>
+            </div>
+        `;
+        actorModal.classList.remove('hidden');
+
+        const actorNewsEl = document.getElementById('actor-news-container');
+        displayNewsContainer(actorName, actorNewsEl, actor.website || null);
+    }
+
+    const tabs = document.getElementById('tabs');
+    const modeProjectBtn = document.getElementById('mode-project');
+    const modeCapacityBtn = document.getElementById('mode-capacity');
+
+    tabs.addEventListener('click', (e) => {
+        const button = e.target.closest('button');
+        if (!button) return;
+        const view = button.dataset.view;
+        if (view === activeView) return;
+
+        document.querySelectorAll('.tab-btn').forEach(btn => {
+            btn.classList.remove('border-b-2', 'border-blue-500', 'text-blue-600');
+            btn.classList.add('border-b-2', 'border-transparent', 'text-gray-500', 'hover:text-gray-700', 'hover:border-gray-300');
+        });
+
+        button.classList.add('border-blue-500', 'text-blue-600');
+        button.classList.remove('border-transparent', 'text-gray-500', 'hover:text-gray-700', 'hover:border-gray-300');
+
+        const legendEl = document.getElementById('capacity-legend');
+
+        if (view === 'table') {
+            document.getElementById('map-view').classList.add('hidden');
+            document.getElementById('table-view').classList.remove('hidden');
+            activeView = 'table';
+            if (legendEl) legendEl.classList.add('hidden');
+        } else {
+            document.getElementById('table-view').classList.add('hidden');
+            document.getElementById('map-view').classList.remove('hidden');
+            activeView = 'map';
+            initMap();
+            if (map) map.invalidateSize(); 
+            applyFilters(); 
+            if (legendEl) legendEl.classList.toggle('hidden', mapMode !== 'capacity');
+        }
+    });
+
+    function setMapMode(mode) {
+        if (mapMode === mode) return;
+
+        mapMode = mode;
+        modeProjectBtn.classList.toggle('active', mode === 'project');
+        modeCapacityBtn.classList.toggle('active', mode === 'capacity');
+        
+        const legendEl = document.getElementById('capacity-legend');
+        if (legendEl) {
+            if (mode === 'capacity') {
+                legendEl.classList.remove('hidden');
+            } else {
+                legendEl.classList.add('hidden');
+            }
+        }
+        
+        if (activeView === 'map') {
+            applyFilters(); 
+            if (mapMode === 'capacity') {
+                try {
+                    const coords = projectsData.filter(p => p.coordinates && p.coordinates.length === 2).map(p => p.coordinates);
+                    if (coords.length > 0) {
+                        const bounds = L.latLngBounds(coords);
+                        map.fitBounds(bounds.pad(0.2));
+                    }
+                } catch (e) {}
+            }
+        }
+    }
+
+    modeProjectBtn.addEventListener('click', () => setMapMode('project'));
+    modeCapacityBtn.addEventListener('click', () => setMapMode('capacity'));
+
+    [actorFilter, countryFilter, statusFilter, yearFilter].forEach(el => {
+        el.addEventListener('input', applyFilters);
+    });
+
+    resetFiltersBtn.addEventListener('click', resetFilters);
+
+    closeProjectModalBtn.addEventListener('click', hideProjectModal);
+    projectModal.addEventListener('click', (e) => {
+        if(e.target === projectModal) hideProjectModal();
+    });
+
+    closeActorModalBtn.addEventListener('click', hideActorModal);
+    actorModal.addEventListener('click', (e) => {
+        if(e.target === actorModal) hideActorModal();
+    });
+
+    closeConfidenceModalBtn.addEventListener('click', () => {
+        confidenceModal.classList.add('hidden');
+    });
+    confidenceModal.addEventListener('click', (e) => {
+        if (e.target === confidenceModal) confidenceModal.classList.add('hidden');
+    });
+
+    document.getElementById('lang-select').addEventListener('change', (e) => {
+        currentLang = e.target.value;
+        localStorage.setItem('lang', currentLang);
+        
+        Array.from(statusFilter.options).forEach(opt => {
+            if (opt.value !== "") opt.remove();
+        });
+        const statuses = [...new Set(projectsData.map(p => p.status))].sort();
+        statuses.forEach(status => {
+            const option = document.createElement('option');
+            option.value = status;
+            option.textContent = translateStatusLabel(status);
+            statusFilter.appendChild(option);
+        });
+
+        applyTranslations();
+    });
+
+    (function addConfidenceThClick() {
+        const thSpan = document.getElementById('th-confidence');
+        if (thSpan) {
+            const thEl = thSpan.closest('th');
+            if (thEl) {
+                thEl.addEventListener('click', () => {
+                    document.getElementById('confidence-modal').classList.remove('hidden');
+                });
+            }
+        }
+    })();
+
+    // Fonction pour générer le contenu de la modal de méthodologie (MIS A JOUR)
+    function updateConfidenceModalContent() {
+        const data = translations[currentLang].confidence_modal;
+        confidenceModalTitle.textContent = data.title || 'Méthodologie';
+
+        // Construction du tableau de probabilité
+        const tableHtml = `
+            <h4 class="font-semibold text-base text-slate-700 mt-4 mb-2">${data.table_title}</h4>
+            <div class="overflow-x-auto">
+                <table class="min-w-full divide-y divide-gray-200">
+                    <thead class="bg-gray-50">
+                        <tr>
+                            <th class="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-1/4">Niveau</th>
+                            <th class="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-3/4">Description</th>
+                        </tr>
+                    </thead>
+                    <tbody class="bg-white divide-y divide-gray-200">
+                        ${ (data.table || []).map(row => `
+                            <tr>
+                                <td class="px-3 py-3 whitespace-nowrap text-sm font-medium ${getConfidenceColor(row.level)}">${row.level}</td>
+                                <td class="px-3 py-3 text-sm text-gray-600">${row.desc}</td>
+                            </tr>
+                        `).join('')}
+                    </tbody>
+                </table>
+            </div>
+        `;
+
+        // Construction de la section des facteurs clés
+        const globalNoteHtml = `
+            <h4 class="font-semibold text-base text-slate-700 mt-4 mb-2">${data.global_note_title}</h4>
+            <ul class="list-disc ml-5 space-y-1 text-sm text-gray-600">
+                ${ (data.global_note || []).map(b => `<li>${b}</li>`).join('') }
+            </ul>
+        `;
+        
+        confidenceModalBody.innerHTML = `
+            <p class="text-gray-700">${data.intro || ''}</p>
+            ${tableHtml}
+            ${globalNoteHtml}
+        `;
+    }
+
+    // Initial Load
+    populateFilters();
+    applyTranslations();
+
+</script>
+
+</body>
+
+</html>
